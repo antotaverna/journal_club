@@ -1,12 +1,3 @@
-# To run
-`source /home/antonela/projects/python_envs/arxiv/bin/activate`
-`pip install arxiv anthropic requests python-dotenv keybert`
-
-- Add arXiv ID manually into `load_papers.py` 
-- `python pipeline_update.py`
-- `python pipeline.py`  (Run without keybert)
-
-
 # arXiv → Notion Pipeline
 
 Automated pipeline that fetches research papers from arXiv and stores them in a Notion database, with optional AI-powered keyword extraction and summarization.
@@ -20,7 +11,7 @@ papers.py          →       pipeline.py        →     Notion database
 (arXiv IDs)            (fetch + enrich)            (one row per paper)
 ```
 
-1. You add arXiv IDs manually to `papers.py`
+1. You add arXiv IDs manually to `load_papers.py`
 2. The pipeline fetches metadata from arXiv (title, authors, abstract, etc.)
 3. Keywords are extracted — either with **KeyBERT** (free, local) or **Claude AI** (API)
 4. Each paper is inserted as a new row in your Notion database
@@ -33,7 +24,7 @@ papers.py          →       pipeline.py        →     Notion database
 ```
 cosmo-coffee-poland/
 ├── pipeline.py       — main pipeline (do not edit)
-├── papers.py         — list of arXiv IDs to process (edit this)
+├── load_papers.py    — list of arXiv IDs to process (edit this)
 ├── .env              — secret tokens (never commit to git)
 ├── .gitignore
 └── README.md
@@ -46,7 +37,7 @@ cosmo-coffee-poland/
 ### 1. Activate the virtual environment
 
 ```bash
-source /home/antonela/projects/python_envs/arxiv/bin/activate
+source ~/projects/python_envs/arxiv/bin/activate
 ```
 
 ### 2. Install dependencies
@@ -105,22 +96,15 @@ Create these properties in your `Papers_arxiv` database:
 
 ## Usage
 
-### Step 1 — Add papers to `papers.py`
+### Step 1 — Add papers to `load_papers.py`
 
-Open `papers.py` and add the arXiv IDs of papers you find on Bentleyfield:
+Open `load_papers.py` and add the arXiv IDs of papers you find on Bentleyfield:
 
 ```python
 PAPER_IDS = [
     "2603.29021",   # The Evolution of the Spin Alignments...
     "2301.07041",   # add more IDs here
 ]
-```
-
-The arXiv ID is the number at the end of any arXiv URL:
-```
-https://arxiv.org/abs/2603.29021
-                      ^^^^^^^^^^
-                      this is the ID
 ```
 
 ### Step 2 — Choose enrichment mode
