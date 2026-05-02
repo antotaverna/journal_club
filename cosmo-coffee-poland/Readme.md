@@ -103,7 +103,7 @@ Open `load_papers.py` and add the arXiv IDs of papers you find on Bentleyfield:
 ```python
 PAPER_IDS = [
     "2603.29021",   # The Evolution of the Spin Alignments...
-    "2301.07041",   # add more IDs here
+    "2604.22738",   # add more IDs here
 ]
 ```
 
