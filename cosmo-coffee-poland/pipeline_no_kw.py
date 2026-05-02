@@ -15,7 +15,7 @@ Required env vars (only if USE_CLAUDE = True):
   ANTHROPIC_API_KEY   — from console.anthropic.com
 
 Install dependencies:
-  pip install arxiv anthropic requests python-dotenv keybert
+  pip install arxiv anthropic requests python-dotenv
 """
 
 import os
@@ -50,9 +50,9 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────
-# 1. TOGGLE — set to False to use KeyBERT instead of Claude
+# 1. TOGGLE — set to False to skip Claude AI
 # ─────────────────────────────────────────────
-USE_CLAUDE = False  # ← True = Claude AI  |  False = KeyBERT (free, local)
+USE_CLAUDE = False   # ← change to True to run with AI enrichment
 
 # ─────────────────────────────────────────────
 # 2. CONFIG — reads from .env file
@@ -110,51 +110,13 @@ def fetch_papers(paper_ids: list[str]) -> list[Paper]:
     return papers
 
 # ─────────────────────────────────────────────
-# 5. KEYWORDS — KeyBERT (USE_CLAUDE=False)
-# ─────────────────────────────────────────────
-
-# Load KeyBERT model once at startup to avoid reloading on every paper
-_keybert_model = None
-
-def get_keybert_model():
-    """Lazy-load KeyBERT model (only when needed)."""
-    global _keybert_model
-    if _keybert_model is None:
-        log.info("Loading KeyBERT model (first time only, may take a few seconds)...")
-        from keybert import KeyBERT
-        _keybert_model = KeyBERT("allenai/scibert_scivocab_uncased")
-        log.info("KeyBERT model loaded.")
-    return _keybert_model
-
-def extract_keywords_keybert(paper: Paper) -> list[str]:
-    """
-    Extract keywords from title + abstract using KeyBERT.
-    Combines both fields to get better coverage of the paper's topics.
-    """
-    model = get_keybert_model()
-
-    # Combine title and abstract for richer keyword extraction
-    text = f"{paper.title}. {paper.abstract}"
-
-    keywords = model.extract_keywords(
-        text,
-        keyphrase_ngram_range=(1, 2),  # single words and pairs (e.g. "dark matter")
-        stop_words="english",
-        use_mmr=True,                  # MMR reduces redundancy between keywords
-        diversity=0.5,                 # balance between relevance and diversity
-        top_n=8
-    )
-
-    return [kw.lower() for kw, score in keywords]
-
-# ─────────────────────────────────────────────
-# 6. ENRICHMENT — with Claude (USE_CLAUDE=True)
+# 5. ENRICHMENT — with Claude (USE_CLAUDE=True)
 # ─────────────────────────────────────────────
 def enrich_with_claude(paper: Paper, client) -> dict:
     """Call Claude to generate summary, keywords and category."""
     prompt = f"""You are analyzing a research paper. Return ONLY a valid JSON object with exactly these fields:
 - "summary": string — 3 to 5 sentences explaining the paper in plain language, no jargon
-- "keywords": array of 5 to 8 strings — key topics or techniques extracted directly from the paper content
+- "keywords": array of 5 to 8 strings — key topics or techniques from the paper
 - "category": string — pick exactly one from:
   [AI/ML, Physics, Biology, Economics, Chemistry, Mathematics, Medicine, Social Sciences, Engineering, Other]
 
@@ -165,7 +127,7 @@ Abstract: {paper.abstract[:1800]}
 
 Rules:
 - Return ONLY the JSON object. No markdown, no backticks, no explanation.
-- "keywords" must be lowercase strings extracted from the paper content (not arXiv category codes).
+- "keywords" must be lowercase strings.
 - "category" must be exactly one of the options listed above."""
 
     response = client.messages.create(
@@ -179,24 +141,23 @@ Rules:
     return json.loads(raw)
 
 # ─────────────────────────────────────────────
-# 7. ENRICHMENT — without Claude (USE_CLAUDE=False)
+# 6. ENRICHMENT — without Claude (USE_CLAUDE=False)
 # ─────────────────────────────────────────────
 def enrich_without_claude(paper: Paper) -> dict:
     """
-    Build enrichment data from arXiv metadata + KeyBERT keyword extraction.
-    Keywords come from the paper content, not arXiv category codes.
+    Build enrichment data from arXiv metadata alone — no AI needed.
+    Uses arXiv categories as keywords and maps them to a readable category.
     """
     category_map = {
-        "cs.AI":    "AI/ML",   "cs.LG":   "AI/ML",  "cs.CL":  "AI/ML",
-        "cs.CV":    "AI/ML",   "cs.NE":   "AI/ML",  "stat.ML": "AI/ML",
-        "math":     "Mathematics",
-        "physics":  "Physics", "astro":   "Physics", "cond-mat": "Physics",
-        "q-bio":    "Biology",
-        "econ":     "Economics", "q-fin":  "Economics",
-        "cs.":      "Engineering",
+        "cs.AI":     "AI/ML",   "cs.LG":   "AI/ML",  "cs.CL":  "AI/ML",
+        "cs.CV":     "AI/ML",   "cs.NE":   "AI/ML",  "stat.ML": "AI/ML",
+        "math":      "Mathematics",
+        "physics":   "Physics", "astro":   "Physics", "cond-mat": "Physics",
+        "q-bio":     "Biology",
+        "econ":      "Economics", "q-fin":  "Economics",
+        "cs.":       "Engineering",
     }
 
-    # Determine category from arXiv tags
     assigned = "Other"
     for cat in paper.categories:
         for prefix, label in category_map.items():
@@ -206,19 +167,14 @@ def enrich_without_claude(paper: Paper) -> dict:
         if assigned != "Other":
             break
 
-    # Extract real keywords from paper content using KeyBERT
-    log.info(f"  Extracting keywords with KeyBERT...")
-    keywords = extract_keywords_keybert(paper)
-    log.info(f"  Keywords found: {keywords}")
-
     return {
-        "summary":  "",
-        "keywords": keywords, 
+        "summary":  paper.abstract[:600],  # use the original abstract as summary
+        "keywords": [c.lower() for c in paper.categories[:8]],
         "category": assigned,
     }
 
 # ─────────────────────────────────────────────
-# 8. NOTION — DEDUPLICATION
+# 7. NOTION — DEDUPLICATION
 # ─────────────────────────────────────────────
 def get_existing_arxiv_ids() -> set[str]:
     """Return arXiv IDs already stored in Notion (handles pagination)."""
@@ -243,7 +199,7 @@ def get_existing_arxiv_ids() -> set[str]:
     return existing
 
 # ─────────────────────────────────────────────
-# 9. NOTION — INSERT
+# 8. NOTION — INSERT
 # ─────────────────────────────────────────────
 def insert_paper(paper: Paper, enriched: dict, ai_enriched: bool) -> None:
     """Create a new page in the Notion database."""
@@ -255,9 +211,6 @@ def insert_paper(paper: Paper, enriched: dict, ai_enriched: bool) -> None:
             },
             "Authors": {
                 "rich_text": [{"text": {"content": ", ".join(paper.authors[:8])}}]
-            },
-            "Abstract": {
-                "rich_text": [{"text": {"content": paper.abstract}}]
             },
             "Summary": {
                 "rich_text": [{"text": {"content": enriched.get("summary", "")}}]
@@ -286,7 +239,7 @@ def insert_paper(paper: Paper, enriched: dict, ai_enriched: bool) -> None:
                 "multi_select": [{"name": cat} for cat in paper.categories[:5]]
             },
             "AI Enriched": {
-                "checkbox": ai_enriched  # True = Claude keywords, False = KeyBERT keywords
+                "checkbox": ai_enriched  # filter in Notion to see which papers have AI summaries
             },
         }
     }
@@ -299,7 +252,7 @@ def insert_paper(paper: Paper, enriched: dict, ai_enriched: bool) -> None:
     res.raise_for_status()
 
 # ─────────────────────────────────────────────
-# 10. VALIDATION
+# 9. VALIDATION
 # ─────────────────────────────────────────────
 def validate_config():
     """Check all required env vars are present before starting."""
@@ -322,12 +275,12 @@ def validate_config():
         raise ValueError("PAPER_IDS is empty in papers.py — add at least one arXiv ID.")
 
 # ─────────────────────────────────────────────
-# 11. MAIN PIPELINE
+# 10. MAIN PIPELINE
 # ─────────────────────────────────────────────
 def run_pipeline():
     validate_config()
 
-    mode = "Claude AI (summary + keywords)" if USE_CLAUDE else "KeyBERT keywords + arXiv metadata"
+    mode = "Claude AI enrichment ON" if USE_CLAUDE else "No AI — arXiv metadata only"
     log.info("=" * 55)
     log.info(f"   arXiv → Notion  |  {mode}")
     log.info(f"   Papers loaded from papers.py: {len(PAPER_IDS)}")
@@ -348,7 +301,7 @@ def run_pipeline():
         ai_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         log.info("Claude client initialized.")
     else:
-        log.info("Using KeyBERT for keyword extraction (no API cost).")
+        log.info("Skipping Claude — using arXiv metadata for enrichment.")
 
     # Step 4: enrich + insert each paper
     stats = {"inserted": 0, "skipped": 0, "failed": 0}
@@ -364,7 +317,7 @@ def run_pipeline():
                 log.info(f"Enriching with Claude: {paper.title[:60]}...")
                 enriched = enrich_with_claude(paper, ai_client)
             else:
-                log.info(f"Enriching with KeyBERT: {paper.title[:60]}...")
+                log.info(f"Enriching from metadata: {paper.title[:60]}...")
                 enriched = enrich_without_claude(paper)
 
             log.info(f"Inserting into Notion: {paper.arxiv_id}")
