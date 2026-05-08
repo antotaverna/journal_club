@@ -2,7 +2,20 @@
 # Add one arXiv ID per line (the number after arxiv.org/abs/...)
 
     
+
+
 PAPER_IDS = [
+    "2604.22213",
+    "2604.22738",
+    "2605.00450",
+    "1104.0949",
+    "1310.0825",
+    "2605.00982",
+    "2605.03008",
+]
+
+
+PAPER_IDS_OLD = [
 
     # ── 4 votos ───────────────────────────────────────────
     "2604.22738",  # Redshift evolution of spin parameter — Riera, Knebe et al.
